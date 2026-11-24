@@ -15,6 +15,22 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Find or unzip project
+        id: proj
+        run: |
+          f=$(find . -name settings.gradle -not -path "./.git/*" | head -n 1)
+          if [ -z "$f" ]; then
+            z=$(find . -maxdepth 2 -iname "*.zip" -not -path "./.git/*" | head -n 1)
+            if [ -z "$z" ]; then
+              echo "::error::না settings.gradle, না কোনো zip ফাইল পাওয়া গেছে।"
+              exit 1
+            fi
+            mkdir -p _proj
+            unzip -q "$z" -d _proj
+            f=$(find _proj -name settings.gradle | head -n 1)
+          fi
+          echo "dir=$(dirname "$f")" >> "$GITHUB_OUTPUT"
+
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
@@ -27,20 +43,21 @@ jobs:
           gradle-version: 8.7
 
       - name: Build debug APK
+        working-directory: ${{ steps.proj.outputs.dir }}
         run: gradle assembleDebug --no-daemon
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: FCalendar-apk
-          path: app/build/outputs/apk/debug/*.apk
+          path: ${{ steps.proj.outputs.dir }}/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
 
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          cp app/build/outputs/apk/debug/*.apk FCalendar.apk
+          cp ${{ steps.proj.outputs.dir }}/app/build/outputs/apk/debug/*.apk FCalendar.apk
           gh release create "build-${{ github.run_number }}" FCalendar.apk \
             --title "FCalendar 1.7.${{ github.run_number }}" \
             --notes "নতুন আপডেট — APK ডাউনলোড করে ইনস্টল দিন।" \
